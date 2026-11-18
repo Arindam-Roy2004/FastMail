@@ -19,7 +19,7 @@ export const listEmailsSchema = z
     tab,
     status: status.optional(),
     page: z.coerce.number().int().min(1).max(10_000).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
+    limit: z.coerce.number().int().min(1).max(500).default(50),
   })
   .refine(statusBelongsToTab, { message: "Status does not belong to this tab", path: ["status"] });
 
