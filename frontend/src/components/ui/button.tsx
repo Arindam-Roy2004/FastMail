@@ -34,16 +34,19 @@ type Props = ComponentProps<'button'> &
   };
 
 export function Button({ className, variant, size, asChild = false, loading = false, disabled, children, ...props }: Props) {
-  const Comp = asChild ? Slot.Root : 'button';
+  const classes = cn(buttonVariants({ variant, size }), className);
+  // Slot needs exactly one child, so a slotted button (a styled Link) gets no spinner.
+  if (asChild) {
+    return (
+      <Slot.Root className={classes} {...props}>
+        {children}
+      </Slot.Root>
+    );
+  }
   return (
-    <Comp
-      className={cn(buttonVariants({ variant, size }), className)}
-      disabled={disabled || loading}
-      aria-busy={loading || undefined}
-      {...props}
-    >
+    <button className={classes} disabled={disabled || loading} aria-busy={loading || undefined} {...props}>
       {loading ? <Spinner className="size-3.5" /> : null}
       {children}
-    </Comp>
+    </button>
   );
 }
