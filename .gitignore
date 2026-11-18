@@ -8,3 +8,6 @@ dist/
 .DS_Store
 coverage/
 backend/src/generated/
+
+# Local planning notes and design captures, not part of the submission.
+docs/
