@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useResource } from '@/lib/use-resource';
 import { emailApi } from './api';
 import type { EmailStatus, EmailSummary, Tab } from './types';
@@ -22,13 +22,12 @@ export type EmailListState = {
 };
 
 export function useEmails({ tab, status, query }: Options): EmailListState {
-  const [limit, setLimit] = useState(PAGE);
   const q = query.trim();
   const searching = q.length > 0;
-
-  useEffect(() => {
-    setLimit(PAGE);
-  }, [tab, status, q]);
+  // "Load more" belongs to one tab + filter + query; any change starts again at one page.
+  const viewKey = `${tab}|${status ?? ''}|${q}`;
+  const [grown, setGrown] = useState({ key: viewKey, limit: PAGE });
+  const limit = grown.key === viewKey ? grown.limit : PAGE;
 
   const resource = useResource(
     async (signal) => {
@@ -54,7 +53,7 @@ export function useEmails({ tab, status, query }: Options): EmailListState {
     error: resource.error,
     searching,
     canLoadMore: !searching && items !== undefined && items.length < total && limit < MAX,
-    loadMore: () => setLimit((current) => Math.min(current + PAGE, MAX)),
+    loadMore: () => setGrown({ key: viewKey, limit: Math.min(limit + PAGE, MAX) }),
     reload: resource.reload,
   };
 }

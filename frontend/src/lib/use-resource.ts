@@ -14,49 +14,46 @@ export type Resource<T> = {
   reload: () => Promise<void>;
 };
 
+type Result<T> = { key: string; data: T | undefined; error: unknown };
+
 export function useResource<T>(loader: (signal: AbortSignal) => Promise<T>, deps: unknown[], options: Options = {}): Resource<T> {
   const { pollMs, enabled = true } = options;
-  const [data, setData] = useState<T>();
-  const [error, setError] = useState<unknown>(null);
+  const key = JSON.stringify(deps);
+  const [result, setResult] = useState<Result<T> | null>(null);
   const [fetching, setFetching] = useState(false);
-  const [settled, setSettled] = useState(false);
   const loaderRef = useRef(loader);
+  const keyRef = useRef(key);
   const controllerRef = useRef<AbortController | null>(null);
 
+  // Declared first, so it runs before the fetch effect below sees a new key.
   useEffect(() => {
     loaderRef.current = loader;
+    keyRef.current = key;
   });
 
   const run = useCallback(async () => {
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
+    const runKey = keyRef.current;
     setFetching(true);
     try {
-      const result = await loaderRef.current(controller.signal);
+      const data = await loaderRef.current(controller.signal);
       if (controller.signal.aborted) return;
-      setData(result);
-      setError(null);
+      setResult({ key: runKey, data, error: null });
     } catch (err) {
       if (isAbort(err) || controller.signal.aborted) return;
-      setError(err);
+      setResult((prev) => (prev?.key === runKey ? { ...prev, error: err } : { key: runKey, data: undefined, error: err }));
     } finally {
-      if (controllerRef.current === controller) {
-        setFetching(false);
-        setSettled(true);
-      }
+      if (controllerRef.current === controller) setFetching(false);
     }
   }, []);
 
   useEffect(() => {
     if (!enabled) return;
-    // New query: forget the old result so the list shows skeletons, not stale rows.
-    setData(undefined);
-    setSettled(false);
     void run();
     return () => controllerRef.current?.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, run, ...deps]);
+  }, [enabled, key, run]);
 
   useEffect(() => {
     if (!enabled || !pollMs) return;
@@ -78,5 +75,12 @@ export function useResource<T>(loader: (signal: AbortSignal) => Promise<T>, deps
     };
   }, [enabled, pollMs, run]);
 
-  return { data, error, loading: enabled && !settled && data === undefined, fetching, reload: run };
+  const current = result?.key === key ? result : null;
+  return {
+    data: current?.data,
+    error: current?.error ?? null,
+    loading: enabled && current === null,
+    fetching,
+    reload: run,
+  };
 }
