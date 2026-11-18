@@ -42,7 +42,7 @@ export function EmailList({ tab, list, query, status, onClearQuery, onClearStatu
           {items.length === 1 ? '1 result' : `${items.length} results`}
         </p>
       ) : null}
-      <ul className="border-t border-line md:ml-4 md:mr-4">
+      <ul className="md:ml-4 md:mr-4">
         {items.map((email) => (
           <EmailRow key={email.id} email={email} tab={tab} />
         ))}
@@ -61,7 +61,7 @@ export function EmailList({ tab, list, query, status, onClearQuery, onClearStatu
 function ListSkeleton() {
   const widths = ['w-[46%]', 'w-[58%]', 'w-[40%]', 'w-[52%]', 'w-[44%]', 'w-[60%]', 'w-[48%]', 'w-[55%]'];
   return (
-    <ul className="border-t border-line md:ml-4 md:mr-4" aria-label="Loading emails">
+    <ul className="md:ml-4 md:mr-4" aria-label="Loading emails">
       {widths.map((width, i) => (
         <li key={i} className="flex h-14 items-center gap-3 border-b border-line px-4 md:px-6">
           <Skeleton className="h-3 w-[110px] shrink-0" />

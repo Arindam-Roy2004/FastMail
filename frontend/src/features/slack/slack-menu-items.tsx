@@ -18,7 +18,7 @@ export function SlackMenuItems({ slack }: Props) {
   if (!status.available) {
     return (
       <DropdownMenuItem icon={<SlackMark />} disabled>
-        Slack is not configured on the server
+        Slack not set up on server
       </DropdownMenuItem>
     );
   }

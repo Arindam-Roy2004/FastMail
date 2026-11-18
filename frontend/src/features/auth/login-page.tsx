@@ -43,7 +43,7 @@ export function LoginPage() {
 
   return (
     <main className="flex min-h-full items-center justify-center bg-white px-4 py-12">
-      <section className="w-full max-w-[496px] rounded-xl border border-line-strong bg-white px-6 py-14 sm:px-14">
+      <section className="w-full max-w-[496px] rounded-xl border border-line-strong bg-white px-6 pb-8 pt-14 sm:px-14">
         <h1 className="mb-8 text-center text-4xl font-bold tracking-tight text-[#1f1f1f]">Login</h1>
         <GoogleSignInButton onClick={signIn} loading={pending} />
         <p

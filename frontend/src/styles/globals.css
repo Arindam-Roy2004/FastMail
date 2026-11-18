@@ -56,9 +56,13 @@
     font-feature-settings: 'cv11';
   }
 
-  :focus-visible {
+  :where(button, a, [tabindex]):focus-visible {
     outline: none;
     box-shadow: var(--shadow-focus);
+  }
+
+  input:focus-visible {
+    outline: none;
   }
 
   button {

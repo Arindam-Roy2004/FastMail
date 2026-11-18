@@ -1,29 +1,31 @@
 const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+const LOCALE = 'en-US';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const formatPillTime = (iso: string, now = Date.now()) => {
   const date = new Date(iso);
   if (Math.abs(date.getTime() - now) < 6 * DAY_MS) {
-    const weekday = date.toLocaleDateString(undefined, { weekday: 'short' });
-    const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    const weekday = date.toLocaleDateString(LOCALE, { weekday: 'short' });
+    const time = date.toLocaleTimeString(LOCALE, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
     return `${weekday} ${time}`;
   }
-  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return date.toLocaleString(LOCALE, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 };
 
 export const formatListTime = (iso: string, now = new Date()) => {
   const date = new Date(iso);
   const sameDay = date.toDateString() === now.toDateString();
-  if (sameDay) return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (sameDay) return date.toLocaleTimeString(LOCALE, { hour: 'numeric', minute: '2-digit' });
   const sameYear = date.getFullYear() === now.getFullYear();
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
+  return date.toLocaleDateString(LOCALE, { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
 };
 
 export const formatDetailTime = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  new Date(iso).toLocaleString(LOCALE, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+const relative = new Intl.RelativeTimeFormat(LOCALE, { numeric: 'auto' });
 
 export const formatRelative = (iso: string, now = Date.now()) => {
   const diff = new Date(iso).getTime() - now;
@@ -36,7 +38,7 @@ export const formatRelative = (iso: string, now = Date.now()) => {
 
 export const formatFullTime = (iso: string) => {
   const date = new Date(iso);
-  const full = date.toLocaleString(undefined, {
+  const full = date.toLocaleString(LOCALE, {
     weekday: 'long',
     day: 'numeric',
     month: 'short',
@@ -52,7 +54,7 @@ export const formatFullTime = (iso: string) => {
 export const timeZoneLabel = () => {
   const zone = timeZone();
   const offset =
-    new Intl.DateTimeFormat(undefined, { timeZoneName: 'shortOffset' })
+    new Intl.DateTimeFormat(LOCALE, { timeZoneName: 'shortOffset' })
       .formatToParts(new Date())
       .find((part) => part.type === 'timeZoneName')?.value ?? '';
   return `${zone.replace(/_/g, ' ')}${offset ? ` (${offset})` : ''}`;
