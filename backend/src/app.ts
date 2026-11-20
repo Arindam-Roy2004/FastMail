@@ -8,7 +8,7 @@ import { env } from "./common/config/env.js";
 import { getRedis } from "./common/config/redis.js";
 import { errorHandler } from "./common/middleware/error-handler.js";
 import authRoute from "./modules/auth/auth.routes.js";
-import { authenticateCookie } from "./modules/auth/auth.middleware.js";
+import { requireQueueAdmin } from "./modules/auth/auth.middleware.js";
 import emailRoute from "./modules/email/email.routes.js";
 import { BULL_BOARD_PATH, createBullBoardRouter } from "./modules/queue/bull-board.js";
 import senderRoute from "./modules/sender/sender.routes.js";
@@ -46,7 +46,7 @@ app.use("/api/auth", authRoute);
 app.use("/api/senders", senderRoute);
 app.use("/api/emails", emailRoute);
 app.use("/api/slack", slackRoute);
-app.use(BULL_BOARD_PATH, authenticateCookie, createBullBoardRouter());
+app.use(BULL_BOARD_PATH, requireQueueAdmin, createBullBoardRouter());
 
 app.use("/api", (_req, res) => {
   res.status(404).json({ success: false, message: "Route not found" });

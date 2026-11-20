@@ -1,6 +1,6 @@
 import { OAuth2Client, type TokenPayload } from "google-auth-library";
 import { db } from "../../common/config/db.js";
-import { env, googleConfigured } from "../../common/config/env.js";
+import { env, googleConfigured, isAdminEmail } from "../../common/config/env.js";
 import ApiError from "../../common/utils/api-error.js";
 import {
   generateAccessToken,
@@ -16,6 +16,8 @@ export const toUserResponse = (user: AuthUser) => ({
   name: user.name,
   email: user.email,
   avatar: user.avatar,
+  // Lets the dashboard hide the queue dashboard link; the server still enforces it.
+  isAdmin: isAdminEmail(user.email),
 });
 
 // Lazy so the API can boot before the Google client exists (routes answer 503).
@@ -111,8 +113,11 @@ export const userFromRefreshToken = async (token: string | undefined) => {
   if (!token) return null;
   try {
     const claims = verifyRefreshToken(token);
-    const user = await db.user.findUnique({ where: { id: claims.sub }, select: { id: true, tokenVersion: true } });
-    return user && user.tokenVersion === claims.ver ? user.id : null;
+    const user = await db.user.findUnique({
+      where: { id: claims.sub },
+      select: { id: true, email: true, tokenVersion: true },
+    });
+    return user && user.tokenVersion === claims.ver ? { id: user.id, email: user.email } : null;
   } catch {
     return null;
   }

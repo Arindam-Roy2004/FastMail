@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { z } from "zod";
+import { parseAdminEmails } from "../utils/admin-emails.js";
 
 const secret = z.string().min(32, "must be at least 32 characters (openssl rand -hex 32)");
 const positiveInt = z.coerce.number().int().positive();
@@ -29,6 +30,11 @@ const envSchema = z.object({
   SLACK_CLIENT_SECRET: optional,
   SLACK_REDIRECT_URI: optional,
 
+  ADMIN_EMAILS: z
+    .string()
+    .optional()
+    .transform((v) => parseAdminEmails(v)),
+
   WORKER_CONCURRENCY: positiveInt.max(100).default(5),
   MIN_DELAY_BETWEEN_EMAILS_MS: positiveInt.default(2000),
   MAX_EMAILS_PER_HOUR_PER_SENDER: positiveInt.default(200),
@@ -54,3 +60,4 @@ export const env = parseEnv();
 export const isProd = env.NODE_ENV === "production";
 export const googleConfigured = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET);
 export const slackConfigured = Boolean(env.SLACK_CLIENT_ID && env.SLACK_CLIENT_SECRET && env.SLACK_REDIRECT_URI);
+export const isAdminEmail = (email: string) => env.ADMIN_EMAILS.includes(email.trim().toLowerCase());

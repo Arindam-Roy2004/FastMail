@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { db } from "../../common/config/db.js";
+import { isAdminEmail } from "../../common/config/env.js";
 import ApiError from "../../common/utils/api-error.js";
 import { verifyAccessToken } from "../../common/utils/jwt.utils.js";
 import { REFRESH_COOKIE } from "./auth.controller.js";
@@ -29,10 +30,14 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
   }
 };
 
-export const authenticateCookie = async (req: Request, res: Response, next: NextFunction) => {
-  const userId = await userFromRefreshToken(req.cookies?.[REFRESH_COOKIE]).catch(() => null);
-  if (!userId) {
+export const requireQueueAdmin = async (req: Request, res: Response, next: NextFunction) => {
+  const user = await userFromRefreshToken(req.cookies?.[REFRESH_COOKIE]).catch(() => null);
+  if (!user) {
     res.status(401).type("text/plain").send("Sign in to the dashboard first, then reopen this page.");
+    return;
+  }
+  if (!isAdminEmail(user.email)) {
+    res.status(403).type("text/plain").send("The queue dashboard is limited to administrators.");
     return;
   }
   next();

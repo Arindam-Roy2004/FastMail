@@ -9,7 +9,7 @@ export const createBullBoardRouter = () => {
   const serverAdapter = new ExpressAdapter();
   serverAdapter.setBasePath(BULL_BOARD_PATH);
   createBullBoard({
-    queues: [new BullMQAdapter(getEmailQueue())],
+    queues: [new BullMQAdapter(getEmailQueue(), { readOnlyMode: true })],
     serverAdapter,
     options: { uiConfig: { boardTitle: "Email scheduler" } },
   });
