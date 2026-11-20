@@ -60,6 +60,7 @@ Everything is in [backend/env.example](backend/env.example), with comments. The 
 | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | 32+ random characters each (`openssl rand -hex 32`) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | A Google OAuth **Web** client. Add `http://localhost:5173` as an authorised JavaScript origin. The frontend needs the same client ID in `VITE_GOOGLE_CLIENT_ID`. |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_REDIRECT_URI` | A Slack app with the `incoming-webhook` scope. Slack only accepts HTTPS redirect URLs, so locally I point a tunnel at the API (`cloudflared tunnel --url http://localhost:4000`) and use `https://<tunnel>/api/slack/callback`, which must also be listed in the Slack app's Redirect URLs. |
+| `ADMIN_EMAILS` | Comma-separated emails that may open the queue dashboard. Anyone can sign in with Google, so the dashboard is opt-in: empty means nobody. It is read-only for everyone. |
 
 The scheduler settings have sensible defaults: `WORKER_CONCURRENCY=5`, `MIN_DELAY_BETWEEN_EMAILS_MS=2000`, `MAX_EMAILS_PER_HOUR_PER_SENDER=200`, `MAX_RECIPIENTS_PER_REQUEST=5000`, `JOB_LOCK_MS=60000`. They are validated with zod at boot, and the process refuses to start with a readable message if something is wrong. Google and Slack are optional at boot, so the API and worker run before those apps exist; their routes answer 503 until they are configured.
 
@@ -124,7 +125,7 @@ When the hour is full the job is **not failed or dropped**. The worker moves it 
 | BullMQ delayed jobs, no cron | `modules/queue/email.queue.ts`; reconcile runs at boot only |
 | Multiple senders via Ethereal | `modules/sender`, `modules/mail/mailer.ts` (pooled transport per sender) |
 | Search via Elasticsearch | `modules/email/email.search.ts`: indexed on schedule, send, failure and reschedule; `GET /api/emails/search` |
-| Live BullMQ dashboard | Bull Board at `/admin/queues` (signed-in users only), linked from the account menu |
+| Live BullMQ dashboard | Bull Board at `/admin/queues`, read-only and limited to the emails in `ADMIN_EMAILS`; linked from the account menu for those users only |
 | Survives restarts, no duplicates | AOF Redis, conditional claim, boot reconcile, graceful shutdown |
 | Configurable worker concurrency | `WORKER_CONCURRENCY` |
 | Minimum delay between sends | Per-sender gap in the Redis Lua script |
