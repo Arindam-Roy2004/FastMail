@@ -81,15 +81,60 @@ All values are validated at startup, and the process refuses to start with a rea
 
 ## Architecture overview
 
-```
-POST /api/emails/schedule
-  validate -> plan send times -> one Postgres transaction -> BullMQ delayed jobs -> index in Elasticsearch
-                                                                     |
-worker (separate process, concurrency N)                             v
-  claim the row -> reserve a slot in Redis -> send now, or move the job to its slot -> record the result
+```mermaid
+flowchart TB
+  user(["User"]) --> spa["React dashboard"]
+  spa -. "sign-in popup" .-> google["Google OAuth"]
+  spa -- "/api, /admin" --> api["Express API"]
+  api -- "verify sign-in" --> google
+  api -- "Slack OAuth" --> slack["Slack"]
+
+  subgraph stores["Data stores"]
+    direction LR
+    pg[("PostgreSQL<br/>source of truth")]
+    redis[("Redis<br/>delayed jobs, rate-limit counters")]
+    es[("Elasticsearch<br/>search index")]
+  end
+
+  api -- "save campaign + emails" --> pg
+  api -- "add delayed jobs" --> redis
+  api -- "index, search" --> es
+
+  redis -- "due jobs" --> worker["BullMQ worker<br/>(separate process)"]
+  worker -- "claim, record result" --> pg
+  worker -- "reserve send slots" --> redis
+  worker -- "re-index" --> es
+  worker -- "send email" --> ethereal["Ethereal SMTP"]
+  worker -- "hourly limit alert" --> slack
 ```
 
 ### How scheduling works
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant D as Dashboard
+  participant A as Express API
+  participant P as PostgreSQL
+  participant Q as BullMQ (Redis)
+  participant S as Elasticsearch
+
+  U->>D: Compose: leads, subject, body, start time, delay, hourly limit
+  D->>A: POST /api/emails/schedule (with idempotency key)
+  A->>A: Validate, de-duplicate recipients, sanitise HTML
+  A->>P: Campaign with this idempotency key already saved?
+  alt Same request sent twice
+    P-->>A: Existing campaign
+    A-->>D: The first campaign, nothing new created
+  else New campaign
+    A->>A: Plan send times (senders round-robin, delay, hourly windows)
+    A->>P: One transaction: campaign + one row per email
+    A->>Q: Add delayed jobs (jobId = email id, delay = time until its slot)
+    A->>S: Index the emails
+    A-->>D: Count, first send time, limits applied
+  end
+```
 
 1. **Validate.** Every request body, query and route parameter goes through a strict zod schema. Unknown keys are rejected, so a client can never set fields like `userId` or `status`. Recipients are trimmed, lower-cased and de-duplicated, and the HTML body is sanitised.
 2. **Plan the send times** (`slot-planner.ts`). Senders are assigned round-robin. Each email is planned at `startTime + position × delay`. When a sender's hour is full, its next email moves to the start of the next hour with room, and the rest follow from there.
@@ -104,6 +149,37 @@ The job payload is only the email id. Recipients, subject and body are read from
 - **Emails are not duplicated.** The worker claims an email with a conditional update (`scheduled` → `sending`). Only one worker can win, so a job delivered twice, or two workers racing, still sends once. An email already marked `sent` makes its job a no-op.
 - **Nothing restarts from scratch.** At startup (once, never on a timer) the API and the worker reconcile Postgres with Redis. Emails left in `sending` by a crashed worker go back to `scheduled`, and every `scheduled` email without a live job gets its job re-added at its original time.
 - **Graceful shutdown.** On SIGINT or SIGTERM the worker stops taking new jobs and lets in-flight sends finish.
+
+Lifecycle of one email (`status` in Postgres):
+
+```mermaid
+stateDiagram-v2
+  [*] --> scheduled: saved with its planned send time
+  scheduled --> sending: a worker claims the row
+  sending --> sent: SMTP accepted the message
+  sending --> scheduled: deferred to a later slot, retry after an error, or reset by reconcile after a crash
+  sending --> failed: last attempt failed
+  sent --> [*]
+  failed --> [*]
+```
+
+What happens when the server restarts:
+
+```mermaid
+sequenceDiagram
+  participant W as API / worker
+  participant R as Redis (AOF on)
+  participant P as PostgreSQL
+
+  Note over W,P: Server stopped. Delayed jobs and their fire times stay in Redis, saved to disk.
+  W->>W: Start again
+  W->>P: Reconcile: emails stuck in "sending" go back to "scheduled"
+  W->>P: Read every "scheduled" email
+  W->>R: Each one has a live job? Re-add any missing job at its original time
+  R-->>W: Jobs that became due while the server was down run now
+  W->>P: Claim the email (scheduled → sending): only one worker can win
+  Note over W,P: An email already marked "sent" turns its job into a no-op, so nothing is sent twice
+```
 
 Tested as in the demo: schedule emails for a minute ahead, stop the API and the worker, restart Redis, wait until the emails are overdue, then start everything again. Each email was sent once, right away.
 
@@ -121,6 +197,27 @@ Both are enforced with **Redis counters, not in-memory counts**, by one Lua scri
 
 **When the hourly limit is reached**, the job is not dropped or failed. The worker moves it back to the delayed set for its reserved slot in the next hour window with room. Slots are handed out in arrival order, so the campaign keeps its order. A deferral does not count as a failed attempt.
 
+What the worker does with each due job:
+
+```mermaid
+flowchart TD
+  due(["Delayed job is due"]) --> claim{"Claim the email row<br/>scheduled → sending"}
+  claim -- "already sent or failed" --> skip(["Skip: duplicate delivery"])
+  claim -- "row no longer exists" --> skip
+  claim -- "another worker holds it" --> later(["Delay the job until that claim expires"])
+  claim -- "claimed" --> reserve["Reserve a send slot in Redis (Lua):<br/>at least the delay after the sender's last send,<br/>in an hour window with room"]
+  reserve --> hit{"Hourly limit<br/>reached?"}
+  hit -- "yes" --> alert["Post the Slack alert<br/>(once per sender per hour)"]
+  hit -- "no" --> far
+  alert --> far{"Slot more than a<br/>few seconds away?"}
+  far -- "yes" --> defer(["Row back to scheduled with the new time,<br/>job moved to the delayed set until then"])
+  far -- "no" --> send["Send through Ethereal SMTP"]
+  send -- "accepted" --> sent(["Mark sent, re-index"])
+  send -- "error" --> last{"Last attempt?"}
+  last -- "no" --> retry(["Release the row; BullMQ retries with backoff"])
+  last -- "yes" --> failed(["Mark failed, give the slot back"])
+```
+
 **Concurrency.** The worker runs `WORKER_CONCURRENCY` jobs in parallel. Running several jobs at once is safe because the claim step and the Redis slot reservation are both atomic.
 
 **Why not BullMQ's built-in `limiter`.** It limits the whole queue, so one job per 2 seconds would cap every sender together at 1,800 emails an hour and make concurrency pointless. With per-sender limits, different senders send in parallel while each one keeps its own gap and hourly limit.
@@ -132,6 +229,110 @@ Both are enforced with **Redis counters, not in-memory counts**, by one Lua scri
 - **The alert:** when a sender takes the last slot of an hour, the worker posts to Slack. Exactly one alert is sent per sender per hour, even with several workers, because the first worker to set a Redis key wins.
 - **Not connected:** with no Slack connection the alert is skipped and nothing breaks. If the user connects later, alerts start without a redeploy.
 - **App removed:** if Slack reports the app or channel is gone, the stored webhook is deleted and the dashboard offers Connect Slack again.
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant D as Dashboard
+  participant A as Express API
+  participant S as Slack
+  participant P as PostgreSQL
+  participant W as Worker
+
+  U->>D: Connect Slack
+  D->>A: POST /api/slack/connect
+  A-->>D: Slack authorize URL (with signed state)
+  D->>S: User approves and picks a channel
+  S->>A: GET /api/slack/callback?code&state
+  A->>S: Exchange the code (oauth.v2.access)
+  S-->>A: Incoming webhook URL
+  A->>P: Save the webhook for this user
+  A-->>D: Back to the dashboard: connected
+  Note over W,S: Later, a sender takes the last slot of its hour
+  W->>P: Read the user's Slack connection
+  alt Connected
+    W->>S: Post "Hourly sending limit reached"
+  else Not connected
+    W->>W: Skip the alert, keep sending
+  end
+```
+
+### Sign-in flow
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant D as Dashboard
+  participant G as Google
+  participant A as Express API
+  participant P as PostgreSQL
+
+  U->>D: Login with Google
+  D->>G: Google sign-in popup (authorization code flow)
+  G-->>D: Authorization code
+  D->>A: POST /api/auth/google
+  A->>G: Exchange the code, verify the ID token
+  A->>P: Create or update the user
+  A-->>D: Access token + httpOnly refresh cookie
+  D-->>U: Dashboard with name, email and avatar
+```
+
+### Data model
+
+```mermaid
+erDiagram
+  User ||--o{ Sender : owns
+  User ||--o{ Campaign : creates
+  User ||--o{ Email : owns
+  User ||--o| SlackConnection : connects
+  Campaign ||--|{ Email : contains
+  Sender ||--o{ Email : sends
+
+  User {
+    uuid id PK
+    string googleId UK
+    string email UK
+    string name
+    string avatar
+    int tokenVersion
+  }
+  Sender {
+    uuid id PK
+    uuid userId FK
+    string email
+    string smtpHost
+    int smtpPort
+  }
+  Campaign {
+    uuid id PK
+    uuid userId FK
+    uuid idempotencyKey
+    string subject
+    datetime startAt
+    int delayMs
+    int hourlyLimit
+    int total
+  }
+  Email {
+    uuid id PK
+    uuid campaignId FK
+    uuid senderId FK
+    string to
+    int seq
+    datetime scheduledAt
+    datetime sentAt
+    EmailStatus status
+    int attempts
+    string messageId
+  }
+  SlackConnection {
+    uuid id PK
+    uuid userId FK
+    string teamName
+    string channel
+    string webhookUrl
+  }
+```
 
 ### Project structure
 
