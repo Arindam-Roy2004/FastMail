@@ -37,10 +37,14 @@ export function AccountCard({ slack }: Props) {
       <DropdownMenuContent className="w-(--radix-dropdown-menu-trigger-width)">
         <SlackMenuItems slack={slack} />
         <DropdownMenuSeparator />
-        <DropdownMenuItem icon={<LayoutDashboard />} onSelect={() => window.open('/admin/queues', '_blank', 'noopener')}>
-          Queue dashboard
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
+        {user.isAdmin ? (
+          <>
+            <DropdownMenuItem icon={<LayoutDashboard />} onSelect={() => window.open('/admin/queues', '_blank', 'noopener')}>
+              Queue dashboard
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuItem
           icon={<LogOut />}
           onSelect={async () => {
