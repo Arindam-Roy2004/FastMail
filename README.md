@@ -6,7 +6,7 @@ This is my submission for the Software Development Intern assignment (Fullstack 
 
 ## Demo video
 
-TODO: add the link to the demo video (under 5 minutes).
+https://github.com/user-attachments/assets/2f960758-9b9f-45c5-b245-0efe7fd72de5
 
 It shows scheduling from the dashboard, the Scheduled and Sent lists updating live, a restart (API, worker and Redis stopped mid-schedule, emails still sent on time and once), and the hourly limit under load with the Slack alert.
 
